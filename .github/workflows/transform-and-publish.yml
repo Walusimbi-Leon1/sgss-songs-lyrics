@@ -31,6 +31,12 @@ on:
 permissions:
   contents: write
 
+# Serialize runs so concurrent dispatches (e.g. Psalms + Song of Solomon)
+# don't reject each other's pushes to main.
+concurrency:
+  group: transform-and-publish
+  cancel-in-progress: false
+
 jobs:
   transform-and-publish:
     runs-on: ubuntu-latest
@@ -152,7 +158,12 @@ jobs:
             git commit -m "Transform $base to simple English" || {
               echo "Failed to commit $base"; FAILED=$((FAILED+1)); continue
             }
-            git push origin HEAD:${{ github.ref_name }} 2>&1
+            # Pull any concurrent changes, then push (retry once on rejection).
+            git pull --rebase origin ${{ github.ref_name }} 2>&1 || true
+            git push origin HEAD:${{ github.ref_name }} 2>&1 || {
+              git pull --rebase origin ${{ github.ref_name }} 2>&1 || true
+              git push origin HEAD:${{ github.ref_name }} 2>&1
+            }
             echo "Pushed $base"
           done
           echo "=== Summary ==="
