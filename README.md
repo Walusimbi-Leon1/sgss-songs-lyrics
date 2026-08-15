@@ -29,7 +29,7 @@ The GitHub Action:
 1. **Fetches** the SGSS Bible repo and extracts Psalms
 2. **Splits** into 150 individual chapter files
 3. **Transforms** each chapter using AI models:
-   - Primary: `oc/hy3-free` (OpenRouter → Tencent TokenHub `hy3-preview`)
+   - Primary: `oc/hy3-free` (OpenCode API)
    - Fallback: NVIDIA models (`nvidia/nemotron-4-340b-reward`)
 4. **Commits and pushes** each chapter individually (not all at once)
 
@@ -43,9 +43,9 @@ The GitHub Action:
 ## Running Locally
 
 ```bash
-# Set your API key
-export OPENROUTER_API_KEY=your-key-here
-export MODEL=oc/hy3-free  # or any OpenRouter model
+# Set your API keys
+export OPENCODE_API_KEY=your-key-here
+export MODEL=oc/hy3-free  # or nvidia/nemotron-4-340b-reward
 
 # Transform a single chapter
 python3 transform_psalms.py psalms/Psalm_001.txt --output songs/Psalm_001_simple.txt
@@ -61,8 +61,8 @@ Run manually from the Actions tab, or it runs automatically daily at 6 AM UTC.
 - `model`: AI model to use (default: `oc/hy3-free`)
 
 ### Secrets Needed
-- `OPENROUTER_API_KEY` — *** API key
-- `NVIDIA_API_KEY` — NVIDIA API key (optional, fallback)
+- `OPENCODE_API_KEY` — *** API key (primary, for `oc/` models)
+- `NVIDIA_API_KEY` — NVIDIA API key (fallback, for `nvidia/` models)
 
 ## License
 

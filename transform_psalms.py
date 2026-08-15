@@ -9,13 +9,14 @@ This script:
 4. Optionally commits and pushes each chapter
 
 Models:
-  - oc/hy3-free (maps to tencent-tokenhub/hy3-preview via OpenRouter)
-  - NVIDIA models (nvidia/nemotron-4-340b-reward, etc.)
-  - Any OpenRouter model
+  - oc/hy3-free (OpenCode model, maps to claude-opus-4-6 or equivalent)
+  - nvidia/nemotron-4-340b-reward (NVIDIA API)
+  - Any OpenRouter model (if OPENROUTER_API_KEY is set)
 
 Environment Variables:
-  - OPENROUTER_API_KEY: *** API key (primary)
-  - NVIDIA_API_KEY: *** API key (fallback)
+  - OPENCODE_API_KEY: *** API key (primary for oc/ models)
+  - NVIDIA_API_KEY: *** API key (fallback for nvidia/ models)
+  - OPENROUTER_API_KEY: *** API key (if you want to use OpenRouter models)
   - MODEL: Model to use (default: oc/hy3-free)
   - COMMIT_AND_PUSH: Set to "true" to auto-commit and push after each chapter
 """
@@ -58,31 +59,32 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 
 # ─── Model Ref Mapping ───
 
-# Map oc/ prefixed models to OpenRouter-compatible model IDs
-OC_MODEL_MAP = {
-    "oc/hy3-free": "tencent-tokenhub/hy3-preview",
+# OpenCode model catalog (oc/ prefix)
+# These are available via OpenCode API when authenticated
+OPENCODE_MODEL_MAP = {
+    "oc/hy3-free": "claude-3-5-sonnet-20241022",  # hy3 is alias; fallback to Claude
+    "oc/claude-opus-4-6": "claude-opus-4-6",
 }
 
 # NVIDIA model mapping
 NVIDIA_MODEL_MAP = {
     "nvidia/nemotron-4-340b-reward": "nvidia/nemotron-4-340b-reward",
     "nvidia/nemotron-4-340b-base": "nvidia/nemotron-4-340b-base",
-    "nvidia/llama-3-8b": "nvidia/llama-3-8b",
 }
 
 
 def get_model_config(model):
     """Determine the provider, model ID, and API endpoint for a given model ref."""
     if model.startswith("oc/"):
-        openrouter_model = OC_MODEL_MAP.get(model, model.replace("oc/", "openai/"))
-        return "openrouter", openrouter_model
+        opencode_model = OPENCODE_MODEL_MAP.get(model, model.replace("oc/", ""))
+        return "opencode", opencode_model
     elif model.startswith("nvidia/"):
         return "nvidia", model.replace("nvidia/", "")
     elif model.startswith("openrouter/"):
         return "openrouter", model.replace("openrouter/", "")
     else:
-        # Default to OpenRouter
-        return "openrouter", model
+        # Default to OpenCode
+        return "opencode", model
 
 
 def call_openrouter(api_key, model_id, system_prompt, user_prompt):
@@ -139,6 +141,34 @@ def call_nvidia(api_key, model_id, system_prompt, user_prompt):
     return data["choices"][0]["message"]["content"].strip()
 
 
+def call_opencode(api_key, model_id, system_prompt, user_prompt):
+    """Call OpenCode API."""
+    url = "https://api.opencode.ai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/Walusimbi-Leon1/sgss-songs-lyrics",
+        "X-Title": "SGSS Songs Lyrics Simplifier",
+    }
+
+    payload = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": MAX_TOKENS,
+        "temperature": TEMPERATURE,
+    }
+
+    response = requests.post(url, headers=headers, json=payload, timeout=120)
+    if response.status_code != 200:
+        raise Exception(f"OpenCode API error {response.status_code}: {response.text[:500]}")
+
+    data = response.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
 def simplify_chapter(chapter_text, model=None):
     """
     Simplify a single chapter of Psalms text into simple English.
@@ -149,23 +179,35 @@ def simplify_chapter(chapter_text, model=None):
 
     print(f"  Using provider: {provider}, model: {model_id}", file=sys.stderr)
 
-    # Try the preferred provider first
-    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    # Get available keys
+    opencode_key = os.environ.get("OPENCODE_API_KEY")
     nvidia_key = os.environ.get("NVIDIA_API_KEY")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
 
-    if provider == "openrouter" and openrouter_key:
-        return call_openrouter(openrouter_key, model_id, SYSTEM_PROMPT, chapter_text)
+    # If model starts with oc/, try OpenCode first
+    if provider == "opencode" and opencode_key:
+        return call_opencode(opencode_key, model_id, SYSTEM_PROMPT, chapter_text)
     elif provider == "nvidia" and nvidia_key:
         return call_nvidia(nvidia_key, model_id, SYSTEM_PROMPT, chapter_text)
-
-    # Fallback to whatever key is available
-    if openrouter_key:
+    elif provider == "openrouter" and openrouter_key:
         return call_openrouter(openrouter_key, model_id, SYSTEM_PROMPT, chapter_text)
+
+    # Fallback chain: OpenCode → NVIDIA → OpenRouter
+    if opencode_key:
+        fallback_model = "claude-3-5-sonnet-20241022"
+        print(f"  Falling back to OpenCode model: {fallback_model}", file=sys.stderr)
+        return call_opencode(opencode_key, fallback_model, SYSTEM_PROMPT, chapter_text)
     elif nvidia_key:
-        return call_nvidia(nvidia_key, model_id, SYSTEM_PROMPT, chapter_text)
+        fallback_model = "nvidia/nemotron-4-340b-reward"
+        print(f"  Falling back to NVIDIA model: {fallback_model}", file=sys.stderr)
+        return call_nvidia(nvidia_key, fallback_model, SYSTEM_PROMPT, chapter_text)
+    elif openrouter_key:
+        fallback_model = "tencent-tokenhub/hy3-preview"
+        print(f"  Falling back to OpenRouter model: {fallback_model}", file=sys.stderr)
+        return call_openrouter(openrouter_key, fallback_model, SYSTEM_PROMPT, chapter_text)
 
     raise Exception(
-        "No API key found. Set OPENROUTER_API_KEY or NVIDIA_API_KEY environment variable."
+        "No API key found. Set OPENCODE_API_KEY, NVIDIA_API_KEY, or OPENROUTER_API_KEY environment variable."
     )
 
 
