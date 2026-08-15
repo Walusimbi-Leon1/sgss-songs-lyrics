@@ -10,7 +10,7 @@ This script:
 
 Models:
   - oc/hy3-free (OpenCode AI, via https://opencode.ai/zen/v1)
-  - nvidia/nemotron-3-super-120b-a12b (NVIDIA API)
+  - nvidia/llama-3.3-nemotron-super-49b-v1.5 (NVIDIA API, fallback)
   - Any OpenRouter model (if OPENROUTER_API_KEY is set)
 
 Environment Variables:
@@ -32,7 +32,7 @@ import requests
 # ─── Configuration ───
 
 DEFAULT_MODEL = os.environ.get("MODEL", "oc/hy3-free")
-MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "2000"))
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "4000"))
 TEMPERATURE = 0.3
 
 # ─── System Prompt ───
@@ -70,6 +70,8 @@ OPENCODE_MODEL_MAP = {
 # NVIDIA model catalog (nvidia/ prefix)
 # API endpoint: https://integrate.api.nvidia.com/v1
 NVIDIA_MODEL_MAP = {
+    "nvidia/nemotron-3.5-lightning-30b-a3b": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
     "nvidia/nemotron-3-super-120b-a12b": "nvidia/nemotron-3-super-120b-a12b",
 }
 
@@ -167,6 +169,7 @@ def call_opencode(api_key, model_id, system_prompt, user_prompt):
         ],
         "max_tokens": MAX_TOKENS,
         "temperature": TEMPERATURE,
+        "reasoning": {"effort": "low"},
     }
 
     response = requests.post(url, headers=headers, json=payload, timeout=120)
@@ -206,7 +209,7 @@ def simplify_chapter(chapter_text, model=None):
         print(f"  Falling back to OpenCode model: {fallback_model}", file=sys.stderr)
         return call_opencode(opencode_key, fallback_model, SYSTEM_PROMPT, chapter_text)
     elif nvidia_key:
-        fallback_model = "nvidia/nemotron-3-super-120b-a12b"
+        fallback_model = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
         print(f"  Falling back to NVIDIA model: {fallback_model}", file=sys.stderr)
         return call_nvidia(nvidia_key, fallback_model, SYSTEM_PROMPT, chapter_text)
     elif openrouter_key:

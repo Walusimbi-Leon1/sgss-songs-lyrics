@@ -12,7 +12,7 @@ on:
         required: false
         default: '150'
       model:
-        description: 'AI model to use (e.g., oc/hy3-free, nvidia/nemotron-4-340b-reward)'
+        description: 'AI model to use (e.g., oc/hy3-free, nvidia/llama-3.3-nemotron-super-49b-v1.5)'
         required: false
         default: 'oc/hy3-free'
 
@@ -39,6 +39,11 @@ jobs:
 
       - name: Install dependencies
         run: pip install requests
+
+      - name: Configure git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
 
       - name: Download Psalms from SGSS Bible repo
         run: |
@@ -179,12 +184,12 @@ jobs:
                   num = num if num else "0"
                   index_lines.append(f"- [Psalm {num}](songs/{f})\n")
 
-          with open("README.md", "w") as f:
+          with open("INDEX.md", "w") as f:
               f.writelines(index_lines)
 
-          print("Generated README.md")
+          print("Generated INDEX.md")
           INDEX_EOF
 
-          git add README.md
-          git commit -m "Update README index" || true
+          git add INDEX.md
+          git commit -m "Update chapter index" || true
           git push origin HEAD:${{ github.ref_name }} 2>/dev/null || true
