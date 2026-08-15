@@ -88,7 +88,7 @@ def get_model_config(model):
         return "opencode", opencode_model
     elif model.startswith("nvidia/"):
         nvidia_model = NVIDIA_MODEL_MAP.get(model, model)
-        return "nvidia", nvidia_model.replace("nvidia/", "")
+        return "nvidia", nvidia_model  # Keep full ID for NVIDIA API
     elif model.startswith("openrouter/"):
         openrouter_model = OPENROUTER_MODEL_MAP.get(model, model.replace("openrouter/", ""))
         return "openrouter", openrouter_model
