@@ -1,69 +1,15 @@
-# SGSS Songs Lyrics
+# SGSS Songs — Simple English Psalms
 
-Simple English Psalms from the SGSS Bible — rewritten for everyday understanding.
+Simple English Psalms rewritten from the SGSS Bible.  
+🌐 **[View the website →](https://<USERNAME>.github.io/sgss-songs-lyrics/)** (replace `<USERNAME>` with your GitHub username after enabling Pages).
 
-## Overview
+## What's here
+- `songs/` — all 150 Psalms, each verse on its own line with its number.
+- `docs/` — generated GitHub Pages site (built by the workflow). Lyrics have **verse numbers stripped** and **long chapters split into parts** of ≤ 22 verses each.
+- `scripts/generate_site.py` — builds the `docs/` site from `songs/`.
+- `.github/workflows/build-and-deploy.yml` — GitHub Action that builds & deploys the site, and re-populates any missing Psalms.
 
-This repo transforms the [SGSS Bible](https://github.com/Walusimbi-Leon1/sgss-bible) Psalms (150 chapters, archaic/poetic English) into **simple, easy-to-read English** that's distinct from any published Bible translation.
-
-## Structure
-
-```
-sgss-songs-lyrics/
-├── psalms/                    # Original SGSS Psalm chapters
-│   ├── Psalm_001.txt
-│   ├── Psalm_002.txt
-│   └── ...
-├── songs/                     # Simplified (simple English) versions
-│   ├── Psalm_001_simple.txt
-│   ├── Psalm_002_simple.txt
-│   └── ...
-├── transform_psalms.py        # Transformation script
-└── .github/workflows/
-    └── transform-psalms.yml   # GitHub Action
-```
-
-## How the Transformation Works
-
-The GitHub Action:
-1. **Fetches** the SGSS Bible repo and extracts Psalms
-2. **Splits** into 150 individual chapter files
-3. **Transforms** each chapter using AI models:
-   - Primary: `oc/hy3-free` (OpenCode AI via `https://opencode.ai/zen/v1`)
-   - Fallback: NVIDIA models (`nvidia/nemotron-3-super-120b-a12b`)
-4. **Commits and pushes** each chapter individually (not all at once)
-
-### The Simple English Style
-
-- Replaces archaic words: "thee"→"you", "thou"→"you", "unto"→"to", etc.
-- Uses short, conversational sentences
-- Warm, friend-to-friend tone
-- Everyday vocabulary throughout
-
-## Running Locally
-
+## Local dev
 ```bash
-# Set your API keys
-export OPENCODE_API_KEY=your-key-here
-export MODEL=oc/hy3-free  # or nvidia/nemotron-3-super-120b-a12b
-
-# Transform a single chapter
-python3 transform_psalms.py psalms/Psalm_001.txt --output songs/Psalm_001_simple.txt
+python3 scripts/generate_site.py   # writes to docs/
 ```
-
-## GitHub Action
-
-Run manually from the Actions tab, or it runs automatically daily at 6 AM UTC.
-
-### Inputs
-- `start_chapter`: Starting chapter (1-150, default: 1)
-- `end_chapter`: Ending chapter (1-150, default: 150)
-- `model`: AI model to use (default: `oc/hy3-free`)
-
-### Secrets Needed
-- `OPENCODE_API_KEY` — *** API key (primary, for `oc/` models)
-- `NVIDIA_API_KEY` — NVIDIA API key (fallback, for `nvidia/` models)
-
-## License
-
-MIT
