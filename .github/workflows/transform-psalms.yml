@@ -24,6 +24,8 @@ jobs:
   transform-psalms:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout songs lyrics repo
@@ -150,9 +152,11 @@ jobs:
             echo "Committed Psalm $chapter_num"
 
             # Push after each commit
-            git push origin HEAD:${{ github.ref_name }} 2>/dev/null || {
-              echo "Failed to push Psalm $chapter_num, will retry with next batch"
-            }
+            if ! git push origin HEAD:${{ github.ref_name }} 2>&1; then
+              echo "Failed to push Psalm $chapter_num"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
 
             echo "Pushed Psalm $chapter_num"
             echo ""
