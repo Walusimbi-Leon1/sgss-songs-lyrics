@@ -3,12 +3,16 @@ name: Transform & Publish
 on:
   workflow_dispatch:
     inputs:
+      book:
+        description: 'Which book to transform (psalms, song-of-solomon, or all)'
+        required: false
+        default: 'all'
       start_chapter:
-        description: 'Start from which Psalm chapter (1-150)'
+        description: 'Start chapter (1-150 for psalms, 1-8 for Song of Solomon)'
         required: false
         default: '1'
       end_chapter:
-        description: 'End at which Psalm chapter (1-150)'
+        description: 'End chapter'
         required: false
         default: '150'
       model:
@@ -21,7 +25,7 @@ on:
         default: 'true'
 
   schedule:
-    # Run daily at 6am UTC — transforms any missing Psalms, then rebuilds the site
+    # Run daily at 6am UTC — transforms missing Psalms + Song of Solomon, then rebuilds the site
     - cron: '0 6 * * *'
 
 permissions:
@@ -51,43 +55,52 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Download Psalms from SGSS Bible repo
+      - name: Download SGSS Bible repo
         run: |
           mkdir -p /tmp/sgss-bible
           curl -sL "https://github.com/Walusimbi-Leon1/sgss-bible/archive/refs/heads/main.tar.gz" | tar xz -C /tmp/sgss-bible --strip-components=1
           ls /tmp/sgss-bible/sgss/
 
-      - name: Split Psalms into chapters
+      - name: Split books into chapters
         run: |
           python3 << 'SPLIT_EOF'
           import os, re
-          input_file = "/tmp/sgss-bible/sgss/19-Psalms.txt"
-          output_dir = "psalms"
-          os.makedirs(output_dir, exist_ok=True)
-          with open(input_file, "r", encoding="utf-8") as f:
-              content = f.read()
-          lines = content.split("\n")
-          if lines and lines[0].strip() == "The Book of Psalms":
-              lines = lines[1:]
-          content = "\n".join(lines)
+
+          BOOKS = {
+              "psalms":  ("/tmp/sgss-bible/sgss/19-Psalms.txt",  "psalms",  "Psalm"),
+              "songofsolomon": ("/tmp/sgss-bible/sgss/22-SongOfSolomon.txt", "solomon", "Song of Solomon"),
+          }
+
           chapter_pattern = re.compile(r"^Chapter\s+(\d+)\s*$", re.MULTILINE)
-          matches = list(chapter_pattern.finditer(content))
-          chapters = []
-          for i, match in enumerate(matches):
-              chapter_num = match.group(1)
-              start = match.end()
-              end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
-              chapter_text = content[start:end].strip()
-              chapters.append((int(chapter_num), chapter_text))
-          chapters.sort(key=lambda x: x[0])
-          for chapter_num, chapter_text in chapters:
-              filename = os.path.join(output_dir, f"Psalm_{chapter_num:03d}.txt")
-              with open(filename, "w", encoding="utf-8") as f:
-                  f.write(f"Psalm {chapter_num}\n\n")
-                  f.write(chapter_text)
-                  f.write("\n")
-              print(f"Created {filename}")
-          print(f"\nTotal chapters: {len(chapters)}")
+
+          for key, (input_file, out_dir, title_prefix) in BOOKS.items():
+              if not os.path.exists(input_file):
+                  print(f"SKIP {key}: {input_file} not found")
+                  continue
+              os.makedirs(out_dir, exist_ok=True)
+              with open(input_file, "r", encoding="utf-8") as f:
+                  content = f.read()
+              # drop the leading book title line if present
+              lines = content.split("\n")
+              if lines and re.match(r"^(The Book of|The )", lines[0].strip()):
+                  lines = lines[1:]
+              content = "\n".join(lines)
+              matches = list(chapter_pattern.finditer(content))
+              chapters = []
+              for i, m in enumerate(matches):
+                  num = int(m.group(1))
+                  start = m.end()
+                  end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+                  chapters.append((num, content[start:end].strip()))
+              chapters.sort(key=lambda x: x[0])
+              for num, text in chapters:
+                  # filename: Psalm_NNN.txt or SongOfSolomon_NN.txt
+                  base_name = "Psalm" if key == "psalms" else "SongOfSolomon"
+                  filename = os.path.join(out_dir, f"{base_name}_{num:03d}.txt")
+                  with open(filename, "w", encoding="utf-8") as f:
+                      f.write(f"{title_prefix} {num}\n\n{text}\n")
+                  print(f"Created {filename}")
+              print(f"{key}: {len(chapters)} chapters\n")
           SPLIT_EOF
 
       - name: Transform chapters to simple English
@@ -96,36 +109,45 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           MODEL: ${{ inputs.model }}
         run: |
+          BOOK="${{ inputs.book }}"
           START=${{ inputs.start_chapter }}
           END=${{ inputs.end_chapter }}
           mkdir -p songs
           FAILED=0
-          for file in psalms/Psalm_*.txt; do
-            chapter_num=$(echo "$file" | grep -oP 'Psalm_\K\d+')
+
+          # Build list of (source_file, base_output_name)
+          shopt -s nullglob
+          FILES=()
+          if [ "$BOOK" = "psalms" ] || [ "$BOOK" = "all" ]; then
+            for f in psalms/Psalm_*.txt; do FILES+=("$f"); done
+          fi
+          if [ "$BOOK" = "song-of-solomon" ] || [ "$BOOK" = "songofsolomon" ] || [ "$BOOK" = "all" ]; then
+            for f in solomon/SongOfSolomon_*.txt; do FILES+=("$f"); done
+          fi
+
+          for file in "${FILES[@]}"; do
+            base=$(basename "$file" .txt)
+            # extract chapter number after the underscore
+            chapter_num=$(echo "$base" | grep -oP '(?<=_)\d+')
             chapter_num=$((10#$chapter_num))
             if [ "$chapter_num" -lt "$START" ] || [ "$chapter_num" -gt "$END" ]; then
               continue
             fi
-            base=$(basename "$file" .txt)
             output_file="songs/${base}_simple.txt"
             if [ -f "$output_file" ] && [ -s "$output_file" ]; then
-              echo "Skipping chapter $chapter_num - already transformed"
+              echo "Skipping $base - already transformed"
               continue
             fi
-            echo "=== Transforming Psalm $chapter_num ==="
+            echo "=== Transforming $base ==="
             python3 transform_psalms.py "$file" --output "$output_file" || {
-              echo "Failed to transform Psalm $chapter_num"
-              FAILED=$((FAILED + 1))
-              continue
+              echo "Failed to transform $base"; FAILED=$((FAILED+1)); continue
             }
             git add "$output_file"
-            git commit -m "Transform Psalm $chapter_num to simple English" || {
-              echo "Failed to commit Psalm $chapter_num"
-              FAILED=$((FAILED + 1))
-              continue
+            git commit -m "Transform $base to simple English" || {
+              echo "Failed to commit $base"; FAILED=$((FAILED+1)); continue
             }
             git push origin HEAD:${{ github.ref_name }} 2>&1
-            echo "Pushed Psalm $chapter_num"
+            echo "Pushed $base"
           done
           echo "=== Summary ==="
           echo "Failed chapters: $FAILED"
