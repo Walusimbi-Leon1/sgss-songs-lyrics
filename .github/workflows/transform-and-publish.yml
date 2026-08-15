@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       book:
-        description: 'Which book to transform (psalms, song-of-solomon, or all)'
+        description: 'Which book to transform (psalms, song-of-solomon, lamentations, prayers, or all)'
         required: false
         default: 'all'
       start_chapter:
-        description: 'Start chapter (1-150 for psalms, 1-8 for Song of Solomon)'
+        description: 'Start chapter number (range filter for numbered chapters)'
         required: false
         default: '1'
       end_chapter:
-        description: 'End chapter'
+        description: 'End chapter number'
         required: false
         default: '150'
       model:
@@ -25,14 +25,13 @@ on:
         default: 'true'
 
   schedule:
-    # Run daily at 6am UTC — transforms missing Psalms + Song of Solomon, then rebuilds the site
+    # Run daily at 6am UTC — transforms missing chapters, prayers & songs, then rebuilds the site
     - cron: '0 6 * * *'
 
 permissions:
   contents: write
 
-# Serialize runs so concurrent dispatches (e.g. Psalms + Song of Solomon)
-# don't reject each other's pushes to main.
+# Serialize runs so concurrent dispatches don't reject each other's pushes to main.
 concurrency:
   group: transform-and-publish
   cancel-in-progress: false
@@ -73,8 +72,9 @@ jobs:
           import os, re
 
           BOOKS = {
-              "psalms":  ("/tmp/sgss-bible/sgss/19-Psalms.txt",  "psalms",  "Psalm"),
-              "songofsolomon": ("/tmp/sgss-bible/sgss/22-SongOfSolomon.txt", "solomon", "Song of Solomon"),
+              "psalms":      ("/tmp/sgss-bible/sgss/19-Psalms.txt",        "psalms",       "Psalm"),
+              "songofsolomon": ("/tmp/sgss-bible/sgss/22-SongOfSolomon.txt", "solomon",     "Song of Solomon"),
+              "laments":     ("/tmp/sgss-bible/sgss/25-Lamentations.txt",  "laments",      "Lamentations"),
           }
 
           chapter_pattern = re.compile(r"^Chapter\s+(\d+)\s*$", re.MULTILINE)
@@ -86,7 +86,6 @@ jobs:
               os.makedirs(out_dir, exist_ok=True)
               with open(input_file, "r", encoding="utf-8") as f:
                   content = f.read()
-              # drop the leading book title line if present
               lines = content.split("\n")
               if lines and re.match(r"^(The Book of|The )", lines[0].strip()):
                   lines = lines[1:]
@@ -100,8 +99,8 @@ jobs:
                   chapters.append((num, content[start:end].strip()))
               chapters.sort(key=lambda x: x[0])
               for num, text in chapters:
-                  # filename: Psalm_NNN.txt or SongOfSolomon_NN.txt
-                  base_name = "Psalm" if key == "psalms" else "SongOfSolomon"
+                  base_name = {"psalms": "Psalm", "songofsolomon": "SongOfSolomon",
+                               "laments": "Lamentation"}[key]
                   filename = os.path.join(out_dir, f"{base_name}_{num:03d}.txt")
                   with open(filename, "w", encoding="utf-8") as f:
                       f.write(f"{title_prefix} {num}\n\n{text}\n")
@@ -109,41 +108,69 @@ jobs:
               print(f"{key}: {len(chapters)} chapters\n")
           SPLIT_EOF
 
+      - name: Extract special passages (prayers, songs)
+        run: |
+          mkdir -p prayers lamentations
+          cp scripts/extract_special.py /tmp/extract_special.py
+          python3 /tmp/extract_special.py --bible /tmp/sgss-bible/sgss
+
       - name: Transform chapters to simple English
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENCODE_API_KEY: *** secrets.OPENCODE_API_KEY }}
+          NVIDIA_API_KEY: *** secrets.NVIDIA_API_KEY }}
           MODEL: ${{ inputs.model }}
         run: |
           BOOK="${{ inputs.book }}"
           START=${{ inputs.start_chapter }}
           END=${{ inputs.end_chapter }}
-          mkdir -p songs
           FAILED=0
 
-          # Build list of (source_file, base_output_name)
           shopt -s nullglob
           FILES=()
+          OUT=()
+          add_files() {  # <base_dir> <glob_pattern> <out_category_dir>
+            local bd="$1" pat="$2" od="$3"
+            for f in $bd/$pat; do
+              [ -e "$f" ] || continue
+              FILES+=("$f")
+              local b=$(basename "$f" .txt)
+              OUT+=("$od/${b}_simple.txt")
+            done
+          }
           if [ "$BOOK" = "psalms" ] || [ "$BOOK" = "all" ]; then
-            for f in psalms/Psalm_*.txt; do FILES+=("$f"); done
+            add_files psalms "Psalm_*.txt" "songs"
           fi
           if [ "$BOOK" = "song-of-solomon" ] || [ "$BOOK" = "songofsolomon" ] || [ "$BOOK" = "all" ]; then
-            for f in solomon/SongOfSolomon_*.txt; do FILES+=("$f"); done
+            add_files solomon "SongOfSolomon_*.txt" "songs"
+          fi
+          if [ "$BOOK" = "laments" ] || [ "$BOOK" = "all" ]; then
+            add_files lamentations "Lamentation_*.txt" "laments"
+          fi
+          if [ "$BOOK" = "prayers" ] || [ "$BOOK" = "all" ]; then
+            add_files prayers "*.txt" "prayers"
+            add_files songs "song-of-the-sea-*.txt" "songs"
+            add_files songs "song-of-moses-*.txt" "songs"
+            add_files songs "hannah-song-*.txt" "songs"
+            add_files songs "deborah-song-*.txt" "songs"
+            add_files songs "habakkuk-song-*.txt" "songs"
+            add_files songs "jonah-song-*.txt" "songs"
+            add_files songs "new-song-*.txt" "songs"
           fi
 
-          for file in "${FILES[@]}"; do
+          mkdir -p songs prayers lamentations
+
+          for i in "${!FILES[@]}"; do
+            file="${FILES[$i]}"
+            output_file="${OUT[$i]}"
             base=$(basename "$file" .txt)
-            # extract chapter number after the underscore
             chapter_num=$(echo "$base" | grep -oP '(?<=_)\d+')
-            chapter_num=$((10#$chapter_num))
-            if [ "$chapter_num" -lt "$START" ] || [ "$chapter_num" -gt "$END" ]; then
-              continue
+            if [ -n "$chapter_num" ]; then
+              chapter_num=$((10#$chapter_num))
+              if [ "$chapter_num" -lt "$START" ] || [ "$chapter_num" -gt "$END" ]; then
+                continue
+              fi
             fi
-            output_file="songs/${base}_simple.txt"
-            # Count how many verses the SOURCE chapter actually has.
             src_verses=$(grep -cE '^[0-9]+ ' "$file" 2>/dev/null || echo 0)
-            # A chapter is "done" if it has >= min(3, src_verses) verse lines.
-            # (e.g. Psalm 117 has only 2 verses in the Bible, so 2 is complete.)
             threshold=3
             if [ "$src_verses" -lt 3 ]; then threshold=$src_verses; fi
             if [ -f "$output_file" ] && [ -s "$output_file" ]; then
@@ -161,7 +188,6 @@ jobs:
               python3 transform_psalms.py "$file" --output "$output_file" || {
                 echo "Transform attempt $attempt failed for $base"; sleep 5; continue
               }
-              # verify we actually got verse content
               vcount=$(grep -cE '^[0-9]+ ' "$output_file" 2>/dev/null || echo 0)
               if [ "$vcount" -ge "$threshold" ]; then
                 ok=1; break
@@ -170,7 +196,6 @@ jobs:
                 sleep 8
               fi
             done
-            # Fallback: rule-based simplification so NO chapter is left a stub.
             if [ "$ok" -ne 1 ]; then
               echo "AI transform failed for $base after retries - using rule-based fallback"
               python3 scripts/rule_simplify.py "$file" --output "$output_file"
@@ -184,7 +209,6 @@ jobs:
             git commit -m "Transform $base to simple English" || {
               echo "Failed to commit $base (likely no change / concurrent) - continuing"; \
             }
-            # Pull any concurrent changes, then push (retry once on rejection).
             git pull --rebase origin ${{ github.ref_name }} 2>&1 || true
             git push origin HEAD:${{ github.ref_name }} 2>&1 || {
               git pull --rebase origin ${{ github.ref_name }} 2>&1 || true

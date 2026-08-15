@@ -162,11 +162,14 @@ def page_shell(title, body, current_href, all_pages):
 
 
 def index_html(all_pages, chapters):
+    book_order = ["Psalms", "Song of Solomon", "Lamentations", "Prayers", "Songs"]
     books = {}
     for c in chapters:
-        books.setdefault(c["book"], []).append(c)
+        b = {"laments": "Lamentations", "prayers": "Prayers", "special-songs": "Songs"}.get(c["book"], c["book"])
+        c["book_label"] = b
+        books.setdefault(b, []).append(c)
     sections = []
-    for book in ("Psalms", "Song of Solomon"):
+    for book in book_order:
         if book not in books:
             continue
         cards = []
@@ -180,8 +183,9 @@ def index_html(all_pages, chapters):
                     for i in range(1, len(c["parts"]) + 1)
                 )
                 chips = f'<div class="chips">{chip_links}</div>'
+            num_display = c.get("cat_icon", "") if c["num"] < 0 else str(c["num"])
             cards.append(
-                f'      <a class="chap" href="{href}"><span class="chapnum">{c["num"]}</span>'
+                f'      <a class="chap" href="{href}"><span class="chapnum">{num_display}</span>'
                 f'<span class="chaptitle">{html.escape(c["plain_title"])}</span>{badge}</a>{chips}'
             )
         grid = "\n".join(cards)
@@ -220,7 +224,13 @@ def generate(songs_dir, output_dir):
     here = os.path.dirname(os.path.abspath(__file__))
     chapters = []
     files = sorted(f for f in os.listdir(songs_dir) if f.endswith("_simple.txt"))
+    # special songs also live in songs/ (song-of-the-sea, etc.) — handled by the
+    # special-songs loop below, so skip them here to avoid duplicates.
+    SPECIAL_SONG_PREFIXES = ("song-of-the-sea", "song-of-moses", "hannah-song",
+                             "deborah-song", "habakkuk-song", "jonah-song", "new-song")
     for fname in files:
+        if fname.startswith(SPECIAL_SONG_PREFIXES):
+            continue
         with open(os.path.join(songs_dir, fname), "r", encoding="utf-8") as f:
             raw = f.read()
         title, verses = parse_verses(raw)
@@ -245,7 +255,47 @@ def generate(songs_dir, output_dir):
             "split": len(parts) > 1,
         })
 
-    chapters.sort(key=lambda c: (c["book"] != "Psalms", c["num"]))
+    # ---- special categories: prayers, lamentations, songs ----
+    # prayers/ and lamentations/ are top-level; special song files live inside songs/ dir.
+    special_defs = [("prayers", "prayers", "."), ("lamentations", "laments", "."),
+                    ("songs", "special-songs", ".")]
+    # for the 'songs' subdir, only pick up the canonical-song _simple files
+    # (Psalms/SongOfSolomon _simple live at top of songs/ and are handled above).
+    special_order = {"prayers": -1, "laments": -1, "special-songs": -1}
+    cat_icons = {"laments": "📜", "prayers": "🙏", "special-songs": "🎵"}
+    cat_titles = {"laments": "Lamentation", "prayers": "Prayer", "special-songs": "Song"}
+    for subdir, sbook, base_dir in special_defs:
+        sdir = os.path.join(base_dir, subdir)
+        if not os.path.isdir(sdir):
+            continue
+        items = sorted(os.listdir(sdir))
+        for fname in items:
+            full = os.path.join(sdir, fname)
+            if not (fname.endswith("_simple.txt") and os.path.isfile(full)):
+                continue
+            if fname.startswith(("Psalm_", "SongOfSolomon_")):
+                continue
+            with open(full, "r", encoding="utf-8") as f:
+                raw = f.read()
+            title, verses = parse_verses(raw)
+            if not verses:
+                continue
+            parts = split_parts(verses)
+            slug = safe_name(fname.replace("_simple.txt", ""))
+            plain = title or fname.replace("_simple.txt", "")
+            chapters.append({
+                "book": sbook,
+                "num": special_order.get(sbook, 99),
+                "plain_title": plain,
+                "slug": slug,
+                "parts": parts,
+                "split": len(parts) > 1,
+                "cat_icon": cat_icons.get(sbook, "📄"),
+                "cat_title": cat_titles.get(sbook, "Reading"),
+            })
+
+    order = {"Psalms": 0, "Song of Solomon": 1, "laments": 2, "prayers": 3, "special-songs": 4}
+    chapters.sort(key=lambda c: (order.get(c["book"], 99), c["num"]))
 
     os.makedirs(output_dir, exist_ok=True)
     assets_dir = os.path.join(output_dir, "assets")
