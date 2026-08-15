@@ -29,8 +29,8 @@ The GitHub Action:
 1. **Fetches** the SGSS Bible repo and extracts Psalms
 2. **Splits** into 150 individual chapter files
 3. **Transforms** each chapter using AI models:
-   - Primary: `oc/hy3-free` (OpenCode API)
-   - Fallback: NVIDIA models (`nvidia/nemotron-4-340b-reward`)
+   - Primary: `oc/hy3-free` (OpenCode AI via `https://opencode.ai/zen/v1`)
+   - Fallback: NVIDIA models (`nvidia/nemotron-3-super-120b-a12b`)
 4. **Commits and pushes** each chapter individually (not all at once)
 
 ### The Simple English Style
@@ -45,7 +45,7 @@ The GitHub Action:
 ```bash
 # Set your API keys
 export OPENCODE_API_KEY=your-key-here
-export MODEL=oc/hy3-free  # or nvidia/nemotron-4-340b-reward
+export MODEL=oc/hy3-free  # or nvidia/nemotron-3-super-120b-a12b
 
 # Transform a single chapter
 python3 transform_psalms.py psalms/Psalm_001.txt --output songs/Psalm_001_simple.txt

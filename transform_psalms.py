@@ -9,16 +9,16 @@ This script:
 4. Optionally commits and pushes each chapter
 
 Models:
-  - oc/hy3-free (OpenCode model, maps to claude-opus-4-6 or equivalent)
-  - nvidia/nemotron-4-340b-reward (NVIDIA API)
+  - oc/hy3-free (OpenCode AI, via https://opencode.ai/zen/v1)
+  - nvidia/nemotron-3-super-120b-a12b (NVIDIA API)
   - Any OpenRouter model (if OPENROUTER_API_KEY is set)
 
 Environment Variables:
-  - OPENCODE_API_KEY: *** API key (primary for oc/ models)
+  - OPENCODE_API_KEY: *** API key (primary for oc/ models, via opencode.ai)
   - NVIDIA_API_KEY: *** API key (fallback for nvidia/ models)
-  - OPENROUTER_API_KEY: *** API key (if you want to use OpenRouter models)
+  - OPENROUTER_API_KEY: *** API key (optional, for OpenRouter models)
   - MODEL: Model to use (default: oc/hy3-free)
-  - COMMIT_AND_PUSH: Set to "true" to auto-commit and push after each chapter
+  - COMMIT_AND_PUSH: Set to "true" to auto-commit and push after each chapterr each chapter
 """
 
 import argparse
@@ -41,7 +41,7 @@ SYSTEM_PROMPT = textwrap.dedent("""\
     You are a text simplification expert. Your job is to rewrite Psalms text from archaic/poetic English into very simple, modern English that is easy to understand and read — like a conversation with a friend.
 
     Key Guidelines:
-    1. Replace archaic words: "thee"→"you", "thou"→"you", "thy"→"your", "thine"→"yours", "unto"→"to", "saying"→"say", "behold"→"look", "verily"→"truly", "the LORD"→"the Lord", "sons of men"→"people", "heathen"→" nations", "congregation"→"community", etc.
+    1. Replace archaic words: "thee"→"you", "thou"→"you", "thy"→"your", "thine"→"yours", "unto"→"to", "saying"→"say", "behold"→"look", "verily"→"truly", "the LORD"→"the Lord", "sons of men"→"people", "heathen"→"nations", "congregation"→"community", etc.
     2. Use short, simple sentences — break up long ones.
     3. Keep the core meaning and spiritual message intact — do not change theological content.
     4. Keep verse numbers at the start of each verse.
@@ -59,17 +59,23 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 
 # ─── Model Ref Mapping ───
 
-# OpenCode model catalog (oc/ prefix)
-# These are available via OpenCode API when authenticated
+# OpenCode AI model catalog (oc/ prefix maps to opencode-ai/ provider)
+# API endpoint: https://opencode.ai/zen/v1
 OPENCODE_MODEL_MAP = {
-    "oc/hy3-free": "claude-3-5-sonnet-20241022",  # hy3 is alias; fallback to Claude
-    "oc/claude-opus-4-6": "claude-opus-4-6",
+    "oc/hy3-free": "hy3-free",           # Tencent's hy3-free, served via OpenCode Zen
+    "oc/big-pickle": "big-pickle",
+    "oc/laguna-s-2.1-free": "laguna-s-2.1-free",
 }
 
-# NVIDIA model mapping
+# NVIDIA model catalog (nvidia/ prefix)
+# API endpoint: https://integrate.api.nvidia.com/v1
 NVIDIA_MODEL_MAP = {
-    "nvidia/nemotron-4-340b-reward": "nvidia/nemotron-4-340b-reward",
-    "nvidia/nemotron-4-340b-base": "nvidia/nemotron-4-340b-base",
+    "nvidia/nemotron-3-super-120b-a12b": "nvidia/nemotron-3-super-120b-a12b",
+}
+
+# OpenRouter model catalog (if OPENROUTER_API_KEY is available)
+OPENROUTER_MODEL_MAP = {
+    "oc/hy3-free": "tencent-tokenhub/hy3-preview",  # If using OpenRouter instead
 }
 
 
@@ -79,11 +85,13 @@ def get_model_config(model):
         opencode_model = OPENCODE_MODEL_MAP.get(model, model.replace("oc/", ""))
         return "opencode", opencode_model
     elif model.startswith("nvidia/"):
-        return "nvidia", model.replace("nvidia/", "")
+        nvidia_model = NVIDIA_MODEL_MAP.get(model, model)
+        return "nvidia", nvidia_model.replace("nvidia/", "")
     elif model.startswith("openrouter/"):
-        return "openrouter", model.replace("openrouter/", "")
+        openrouter_model = OPENROUTER_MODEL_MAP.get(model, model.replace("openrouter/", ""))
+        return "openrouter", openrouter_model
     else:
-        # Default to OpenCode
+        # Default: try OpenCode with model name as-is
         return "opencode", model
 
 
@@ -142,8 +150,8 @@ def call_nvidia(api_key, model_id, system_prompt, user_prompt):
 
 
 def call_opencode(api_key, model_id, system_prompt, user_prompt):
-    """Call OpenCode API."""
-    url = "https://api.opencode.ai/v1/chat/completions"
+    """Call OpenCode API (opencode.ai/zen)."""
+    url = "https://opencode.ai/zen/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -194,11 +202,11 @@ def simplify_chapter(chapter_text, model=None):
 
     # Fallback chain: OpenCode → NVIDIA → OpenRouter
     if opencode_key:
-        fallback_model = "claude-3-5-sonnet-20241022"
+        fallback_model = "hy3-free"
         print(f"  Falling back to OpenCode model: {fallback_model}", file=sys.stderr)
         return call_opencode(opencode_key, fallback_model, SYSTEM_PROMPT, chapter_text)
     elif nvidia_key:
-        fallback_model = "nvidia/nemotron-4-340b-reward"
+        fallback_model = "nvidia/nemotron-3-super-120b-a12b"
         print(f"  Falling back to NVIDIA model: {fallback_model}", file=sys.stderr)
         return call_nvidia(nvidia_key, fallback_model, SYSTEM_PROMPT, chapter_text)
     elif openrouter_key:
