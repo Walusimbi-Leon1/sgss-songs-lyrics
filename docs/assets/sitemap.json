@@ -11,6 +11,16 @@
       "split": false
     },
     {
+      "label": "Song of Solomon 4",
+      "parts": 1,
+      "split": false
+    },
+    {
+      "label": "Song of Solomon 6",
+      "parts": 1,
+      "split": false
+    },
+    {
       "label": "Psalm 1",
       "parts": 1,
       "split": false
@@ -638,6 +648,18 @@
       "part": 1,
       "href": "psalm_SongOfSolomon_003-part1.html",
       "verses": 11
+    },
+    {
+      "label": "Song of Solomon 4",
+      "part": 1,
+      "href": "psalm_SongOfSolomon_004-part1.html",
+      "verses": 2
+    },
+    {
+      "label": "Song of Solomon 6",
+      "part": 1,
+      "href": "psalm_SongOfSolomon_006-part1.html",
+      "verses": 13
     },
     {
       "label": "Psalm 1",
