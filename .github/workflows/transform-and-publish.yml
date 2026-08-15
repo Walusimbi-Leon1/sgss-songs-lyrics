@@ -135,8 +135,14 @@ jobs:
             fi
             output_file="songs/${base}_simple.txt"
             if [ -f "$output_file" ] && [ -s "$output_file" ]; then
-              echo "Skipping $base - already transformed"
-              continue
+              # Count verse lines (lines starting with a digit + space) in the existing file.
+              existing_verses=$(grep -cE '^[0-9]+ ' "$output_file" || true)
+              if [ "$existing_verses" -ge 3 ]; then
+                echo "Skipping $base - already transformed ($existing_verses verses)"
+                continue
+              else
+                echo "$base is a stub (<3 verses) - re-transforming"
+              fi
             fi
             echo "=== Transforming $base ==="
             python3 transform_psalms.py "$file" --output "$output_file" || {
