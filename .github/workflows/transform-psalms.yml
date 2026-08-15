@@ -1,0 +1,190 @@
+name: Transform Psalms to Simple English
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_chapter:
+        description: 'Start from which Psalm chapter (1-150)'
+        required: false
+        default: '1'
+      end_chapter:
+        description: 'End at which Psalm chapter (1-150)'
+        required: false
+        default: '150'
+      model:
+        description: 'AI model to use (e.g., oc/hy3-free, openrouter/meta-llama/llama-4, nvidia/nemotron-4-340b-reward)'
+        required: false
+        default: 'oc/hy3-free'
+
+  schedule:
+    # Run daily at 6am UTC - will only process chapters that haven't been transformed yet
+    - cron: '0 6 * * *'
+
+jobs:
+  transform-psalms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout songs lyrics repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Download Psalms from SGSS Bible repo
+        run: |
+          mkdir -p /tmp/sgss-bible
+          curl -sL "https://github.com/Walusimbi-Leon1/sgss-bible/archive/refs/heads/main.tar.gz" | tar xz -C /tmp/sgss-bible --strip-components=1
+          ls /tmp/sgss-bible/sgss/
+
+      - name: Split Psalms into chapters
+        run: |
+          python3 << 'SPLIT_EOF'
+          import os, re
+
+          input_file = "/tmp/sgss-bible/sgss/19-Psalms.txt"
+          output_dir = "psalms"
+
+          os.makedirs(output_dir, exist_ok=True)
+
+          with open(input_file, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          # Remove header
+          lines = content.split("\n")
+          if lines[0].strip() == "The Book of Psalms":
+              lines = lines[1:]
+
+          content = "\n".join(lines)
+
+          # Split by Chapter markers
+          chapter_pattern = re.compile(r"^Chapter\s+(\d+)\s*$", re.MULTILINE)
+          matches = list(chapter_pattern.finditer(content))
+
+          chapters = []
+          for i, match in enumerate(matches):
+              chapter_num = match.group(1)
+              start = match.end()
+              if i + 1 < len(matches):
+                  end = matches[i + 1].start()
+              else:
+                  end = len(content)
+
+              chapter_text = content[start:end].strip()
+              chapters.append((int(chapter_num), chapter_text))
+
+          chapters.sort(key=lambda x: x[0])
+
+          for chapter_num, chapter_text in chapters:
+              filename = os.path.join(output_dir, f"Psalm_{chapter_num:03d}.txt")
+              with open(filename, "w", encoding="utf-8") as f:
+                  f.write(f"Psalm {chapter_num}\n\n")
+                  f.write(chapter_text)
+                  f.write("\n")
+              print(f"Created {filename}")
+
+          print(f"\nTotal chapters: {len(chapters)}")
+          SPLIT_EOF
+
+      - name: Transform chapters to simple English
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          MODEL: ${{ inputs.model }}
+          COMMIT_AND_PUSH: true
+        run: |
+          START=${{ inputs.start_chapter }}
+          END=${{ inputs.end_chapter }}
+
+          mkdir -p songs
+          FAILED=0
+
+          for file in psalms/Psalm_*.txt; do
+            chapter_num=$(echo "$file" | grep -oP 'Psalm_\K\d+')
+            chapter_num=$((10#$chapter_num))  # Remove leading zeros
+
+            # Skip chapters outside range
+            if [ "$chapter_num" -lt "$START" ] || [ "$chapter_num" -gt "$END" ]; then
+              continue
+            fi
+
+            # Check if already transformed
+            base=$(basename "$file" .txt)
+            output_file="songs/${base}_simple.txt"
+
+            if [ -f "$output_file" ]; then
+              echo "Skipping chapter $chapter_num - already transformed"
+              continue
+            fi
+
+            echo "=== Transforming Psalm $chapter_num ==="
+
+            python3 transform_psalms.py "$file" --output "$output_file" || {
+              echo "Failed to transform Psalm $chapter_num"
+              FAILED=$((FAILED + 1))
+              continue
+            }
+
+            # Commit and push this chapter immediately
+            git add "$output_file"
+            git commit -m "Transform Psalm $chapter_num to simple English" || {
+              echo "Failed to commit Psalm $chapter_num"
+              FAILED=$((FAILED + 1))
+              continue
+            }
+
+            echo "Committed Psalm $chapter_num"
+
+            # Push after each commit
+            git push origin HEAD:${{ github.ref_name }} 2>/dev/null || {
+              echo "Failed to push Psalm $chapter_num, will retry with next batch"
+            }
+
+            echo "Pushed Psalm $chapter_num"
+            echo ""
+          done
+
+          echo "=== Summary ==="
+          echo "Failed chapters: $FAILED"
+
+      - name: Generate index
+        if: always()
+        run: |
+          python3 << 'INDEX_EOF'
+          import os
+
+          songs_dir = "songs"
+          index_lines = ["# SGSS Songs - Simple English Psalms\n\n"]
+          index_lines.append("This collection contains the Psalms from the SGSS Bible,")
+          index_lines.append("transformed into simple, easy-to-read English.\n\n")
+          index_lines.append("## Chapters\n\n")
+
+          if os.path.exists(songs_dir):
+              files = sorted([
+                  f for f in os.listdir(songs_dir)
+                  if f.startswith("Psalm_") and f.endswith("_simple.txt")
+              ])
+              for f in files:
+                  # Extract chapter number
+                  num = f.replace("Psalm_", "").replace("_simple.txt", "").lstrip("0")
+                  num = num if num else "0"
+                  index_lines.append(f"- [Psalm {num}](songs/{f})\n")
+
+          with open("README.md", "w") as f:
+              f.writelines(index_lines)
+
+          print("Generated README.md")
+          INDEX_EOF
+
+          git add README.md
+          git commit -m "Update README index" || true
+          git push origin HEAD:${{ github.ref_name }} 2>/dev/null || true
