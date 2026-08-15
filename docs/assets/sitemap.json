@@ -6,19 +6,39 @@
       "split": false
     },
     {
+      "label": "Song of Solomon 2",
+      "parts": 2,
+      "split": true
+    },
+    {
       "label": "Song of Solomon 3",
       "parts": 1,
       "split": false
     },
     {
       "label": "Song of Solomon 4",
-      "parts": 1,
-      "split": false
+      "parts": 2,
+      "split": true
+    },
+    {
+      "label": "Song of Solomon 5",
+      "parts": 2,
+      "split": true
     },
     {
       "label": "Song of Solomon 6",
       "parts": 1,
       "split": false
+    },
+    {
+      "label": "Song of Solomon 7",
+      "parts": 1,
+      "split": false
+    },
+    {
+      "label": "Song of Solomon 8",
+      "parts": 2,
+      "split": true
     },
     {
       "label": "Psalm 1",
@@ -779,6 +799,18 @@
       "verses": 17
     },
     {
+      "label": "Song of Solomon 2",
+      "part": 1,
+      "href": "psalm_SongOfSolomon_002-part1.html",
+      "verses": 14
+    },
+    {
+      "label": "Song of Solomon 2",
+      "part": 2,
+      "href": "psalm_SongOfSolomon_002-part2.html",
+      "verses": 13
+    },
+    {
       "label": "Song of Solomon 3",
       "part": 1,
       "href": "psalm_SongOfSolomon_003-part1.html",
@@ -788,13 +820,49 @@
       "label": "Song of Solomon 4",
       "part": 1,
       "href": "psalm_SongOfSolomon_004-part1.html",
-      "verses": 2
+      "verses": 16
+    },
+    {
+      "label": "Song of Solomon 4",
+      "part": 2,
+      "href": "psalm_SongOfSolomon_004-part2.html",
+      "verses": 16
+    },
+    {
+      "label": "Song of Solomon 5",
+      "part": 1,
+      "href": "psalm_SongOfSolomon_005-part1.html",
+      "verses": 17
+    },
+    {
+      "label": "Song of Solomon 5",
+      "part": 2,
+      "href": "psalm_SongOfSolomon_005-part2.html",
+      "verses": 16
     },
     {
       "label": "Song of Solomon 6",
       "part": 1,
       "href": "psalm_SongOfSolomon_006-part1.html",
       "verses": 13
+    },
+    {
+      "label": "Song of Solomon 7",
+      "part": 1,
+      "href": "psalm_SongOfSolomon_007-part1.html",
+      "verses": 13
+    },
+    {
+      "label": "Song of Solomon 8",
+      "part": 1,
+      "href": "psalm_SongOfSolomon_008-part1.html",
+      "verses": 15
+    },
+    {
+      "label": "Song of Solomon 8",
+      "part": 2,
+      "href": "psalm_SongOfSolomon_008-part2.html",
+      "verses": 15
     },
     {
       "label": "Psalm 1",
